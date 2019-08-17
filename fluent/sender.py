@@ -71,19 +71,23 @@ class FluentSender(object):
         self.msgpack_kwargs = {} if msgpack_kwargs is None else msgpack_kwargs
 
         self.socket = None
+        # pending raw bytes buffering to send to fluentd
         self.pendings = None
+        # corresponding original records pending send. Usefull for reconstructing records in fallback python logging handlers
+        # in cases where writes to fluentd fails and the raw fluentd bytes are less useful than a LogRecord.
+        self.pending_records = None
         self.lock = threading.Lock()
         self._closed = False
         self._last_error_threadlocal = threading.local()
 
-    def emit(self, label, data):
+    def emit(self, label, data, record):
         if self.nanosecond_precision:
             cur_time = EventTime(time.time())
         else:
             cur_time = int(time.time())
-        return self.emit_with_time(label, cur_time, data)
+        return self.emit_with_time(label, cur_time, data, record)
 
-    def emit_with_time(self, label, timestamp, data):
+    def emit_with_time(self, label, timestamp, data, record):
         if self.nanosecond_precision and isinstance(timestamp, float):
             timestamp = EventTime(timestamp)
         try:
@@ -94,7 +98,7 @@ class FluentSender(object):
                                        {"level": "CRITICAL",
                                         "message": "Can't output to log",
                                         "traceback": traceback.format_exc()})
-        return self._send(bytes_)
+        return self._send(bytes_, record)
 
     @property
     def last_error(self):
@@ -117,10 +121,11 @@ class FluentSender(object):
                 try:
                     self._send_data(self.pendings)
                 except Exception:
-                    self._call_buffer_overflow_handler(self.pendings)
+                    self._call_buffer_overflow_handler(self.pendings, records=self.pending_records)
 
             self._close()
             self.pendings = None
+            self.pending_records = None
 
     def _make_packet(self, label, timestamp, data):
         if label:
@@ -132,23 +137,24 @@ class FluentSender(object):
             print(packet)
         return msgpack.packb(packet, **self.msgpack_kwargs)
 
-    def _send(self, bytes_):
+    def _send(self, bytes_, record):
         with self.lock:
             if self._closed:
                 return False
-            return self._send_internal(bytes_)
+            return self._send_internal(bytes_, record)
 
-    def _send_internal(self, bytes_):
+    def _send_internal(self, bytes_, record):
         # buffering
+        bytes_to_send = bytes_
         if self.pendings:
-            self.pendings += bytes_
-            bytes_ = self.pendings
+            bytes_to_send = self.pendings + bytes_
 
         try:
-            self._send_data(bytes_)
+            self._send_data(bytes_to_send)
 
             # send finished
             self.pendings = None
+            self.pending_records = None
 
             return True
         except socket.error as e:
@@ -157,12 +163,24 @@ class FluentSender(object):
             # close socket
             self._close()
 
+            # Update pending records
+	    if not self.pendings:
+                self.pendings = bytes_
+                self.pending_records = [record]
+            else:
+                self.pendings += bytes_
+                self.pending_records.append(record)
+
             # clear buffer if it exceeds max buffer size
             if self.pendings and (len(self.pendings) > self.bufmax):
-                self._call_buffer_overflow_handler(self.pendings)
+                self._call_buffer_overflow_handler(self.pendings, records=self.pending_records)
                 self.pendings = None
+                self.pending_records = None
             else:
                 self.pendings = bytes_
+                if not self.pending_records:
+                    self.pending_records = [record]
+
 
             return False
 
@@ -217,10 +235,10 @@ class FluentSender(object):
             else:
                 self.socket = sock
 
-    def _call_buffer_overflow_handler(self, pending_events):
+    def _call_buffer_overflow_handler(self, pending_events, records=None):
         try:
             if self.buffer_overflow_handler:
-                self.buffer_overflow_handler(pending_events)
+                self.buffer_overflow_handler(pending_events, records=records)
         except Exception as e:
             # User should care any exception in handler
             pass

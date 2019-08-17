@@ -15,7 +15,6 @@ from fluent.sender import EventTime
 __all__ = ["EventTime", "FluentSender"]
 
 DEFAULT_QUEUE_MAXSIZE = 100
-DEFAULT_QUEUE_CIRCULAR = False
 
 _TOMBSTONE = object()
 
@@ -54,7 +53,6 @@ class FluentSender(sender.FluentSender):
                  nanosecond_precision=False,
                  msgpack_kwargs=None,
                  queue_maxsize=DEFAULT_QUEUE_MAXSIZE,
-                 queue_circular=DEFAULT_QUEUE_CIRCULAR,
                  **kwargs):
         """
         :param kwargs: This kwargs argument is not used in __init__. This will be removed in the next major version.
@@ -65,7 +63,6 @@ class FluentSender(sender.FluentSender):
                                            msgpack_kwargs=msgpack_kwargs,
                                            **kwargs)
         self._queue_maxsize = queue_maxsize
-        self._queue_circular = queue_circular
 
         self._thread_guard = threading.Event()  # This ensures visibility across all variables
         self._closed = False
@@ -94,28 +91,17 @@ class FluentSender(sender.FluentSender):
     def queue_maxsize(self):
         return self._queue_maxsize
 
-    @property
-    def queue_blocking(self):
-        return not self._queue_circular
-
-    @property
-    def queue_circular(self):
-        return self._queue_circular
-
-    def _send(self, bytes_):
+    def _send(self, bytes_, record):
         with self.lock:
             if self._closed:
                 return False
-            if self._queue_circular and self._queue.full():
-                # discard oldest
+            if self._queue.full():
+                self._call_buffer_overflow_handler(bytes_, records=[record])
+            else:
                 try:
-                    self._queue.get(block=False)
-                except Empty:  # pragma: no cover
-                    pass
-            try:
-                self._queue.put(bytes_, block=(not self._queue_circular))
-            except Full:    # pragma: no cover
-                return False    # this actually can't happen
+                    self._queue.put((bytes_, record), block=False)
+                except Full:    # pragma: no cover
+                    return False    # this actually can't happen
 
             return True
 
@@ -124,11 +110,11 @@ class FluentSender(sender.FluentSender):
 
         try:
             while True:
-                bytes_ = self._queue.get(block=True)
+                bytes_, record = self._queue.get(block=True)
                 if bytes_ is _TOMBSTONE:
                     break
 
-                send_internal(bytes_)
+                send_internal(bytes_, record)
         finally:
             self._close()
 

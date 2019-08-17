@@ -240,7 +240,7 @@ class FluentHandler(logging.Handler):
                                       sender.EventTime(record.created)
                                       if _sender.nanosecond_precision
                                       else int(record.created),
-                                      data)
+                                      data, record)
 
     def close(self):
         self.acquire()
