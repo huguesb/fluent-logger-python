@@ -25,7 +25,7 @@ class TestEvent(unittest.TestCase):
         event.Event('follow', {
             'from': 'userA',
             'to': 'userB'
-        })
+        }, None)
 
     def test_logging_with_timestamp(self):
         # XXX: This tests succeeds even if the fluentd connection failed
@@ -34,14 +34,14 @@ class TestEvent(unittest.TestCase):
         event.Event('follow', {
             'from': 'userA',
             'to': 'userB'
-        }, time=int(0))
+        }, None, time=int(0))
 
     def test_no_last_error_on_successful_event(self):
         global_sender = sender.get_global_sender()
         event.Event('unfollow', {
             'from': 'userC',
             'to': 'userD'
-        })
+        }, None)
 
         self.assertEqual(global_sender.last_error, None)
         sender.close()
@@ -61,7 +61,7 @@ class TestEvent(unittest.TestCase):
         event.Event('unfollow', {
             'from': 'userE',
             'to': 'userF'
-        })
+        }, None)
 
         ex = global_sender.last_error
         self.assertEqual(ex.args, EXCEPTION_MSG)

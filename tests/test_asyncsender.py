@@ -62,7 +62,7 @@ class TestSender(unittest.TestCase):
 
     def test_simple(self):
         with self._sender as sender:
-            sender.emit('foo', {'bar': 'baz'})
+            sender.emit('foo', {'bar': 'baz'}, None)
 
         data = self.get_data()
         eq = self.assertEqual
@@ -75,7 +75,7 @@ class TestSender(unittest.TestCase):
 
     def test_decorator_simple(self):
         with self._sender as sender:
-            sender.emit('foo', {'bar': 'baz'})
+            sender.emit('foo', {'bar': 'baz'}, None)
 
         data = self.get_data()
         eq = self.assertEqual
@@ -89,7 +89,7 @@ class TestSender(unittest.TestCase):
     def test_nanosecond(self):
         with self._sender as sender:
             sender.nanosecond_precision = True
-            sender.emit('foo', {'bar': 'baz'})
+            sender.emit('foo', {'bar': 'baz'}, None)
 
         data = self.get_data()
         eq = self.assertEqual
@@ -104,7 +104,7 @@ class TestSender(unittest.TestCase):
         time_ = 1490061367.8616468906402588
         with self._sender as sender:
             sender.nanosecond_precision = True
-            sender.emit_with_time('foo', time_, {'bar': 'baz'})
+            sender.emit_with_time('foo', time_, {'bar': 'baz'}, None)
 
         data = self.get_data()
         eq = self.assertEqual
@@ -118,7 +118,7 @@ class TestSender(unittest.TestCase):
 
     def test_no_last_error_on_successful_emit(self):
         with self._sender as sender:
-            sender.emit('foo', {'bar': 'baz'})
+            sender.emit('foo', {'bar': 'baz'}, None)
 
         self.assertEqual(sender.last_error, None)
 
@@ -147,12 +147,12 @@ class TestSender(unittest.TestCase):
 
     def test_sender_without_flush(self):
         with self._sender as sender:
-            sender._queue.put(fluent.asyncsender._TOMBSTONE)  # This closes without closing
+            sender._queue.put((fluent.asyncsender._TOMBSTONE, None))  # This closes without closing
             sender._send_thread.join()
             for x in range(1, 10):
-                sender._queue.put(x)
+                sender._queue.put(x, None)
             sender.close(False)
-            self.assertIs(sender._queue.get(False), fluent.asyncsender._TOMBSTONE)
+            self.assertIs(sender._queue.get(False)[0], fluent.asyncsender._TOMBSTONE)
 
 
 class TestSenderDefaultProperties(unittest.TestCase):
@@ -170,8 +170,6 @@ class TestSenderDefaultProperties(unittest.TestCase):
 
     def test_default_properties(self):
         with self._sender as sender:
-            self.assertTrue(sender.queue_blocking)
-            self.assertFalse(sender.queue_circular)
             self.assertTrue(isinstance(sender.queue_maxsize, int))
             self.assertTrue(sender.queue_maxsize > 0)
 
@@ -195,7 +193,7 @@ class TestSenderWithTimeout(unittest.TestCase):
 
     def test_simple(self):
         with self._sender as sender:
-            sender.emit('foo', {'bar': 'baz'})
+            sender.emit('foo', {'bar': 'baz'}, None)
 
         data = self.get_data()
         eq = self.assertEqual
@@ -208,7 +206,7 @@ class TestSenderWithTimeout(unittest.TestCase):
 
     def test_simple_with_timeout_props(self):
         with self._sender as sender:
-            sender.emit('foo', {'bar': 'baz'})
+            sender.emit('foo', {'bar': 'baz'}, None)
 
         data = self.get_data()
         eq = self.assertEqual
@@ -227,62 +225,11 @@ class TestEventTime(unittest.TestCase):
         self.assertEqual(time.data, b'X\xd0\x8873[\xb0*')
 
 
-class TestSenderWithTimeoutAndCircular(unittest.TestCase):
+class TestSenderWithTimeoutAndOverflow(unittest.TestCase):
     Q_SIZE = 3
 
     def setUp(self):
-        super(TestSenderWithTimeoutAndCircular, self).setUp()
-        self._server = mockserver.MockRecvServer('localhost')
-        self._sender = fluent.asyncsender.FluentSender(tag='test',
-                                                       port=self._server.port,
-                                                       queue_maxsize=self.Q_SIZE,
-                                                       queue_circular=True)
-
-    def tearDown(self):
-        try:
-            self._sender.close()
-        finally:
-            self._server.close()
-
-    def get_data(self):
-        return self._server.get_received()
-
-    def test_simple(self):
-        with self._sender as sender:
-            self.assertEqual(self._sender.queue_maxsize, self.Q_SIZE)
-            self.assertEqual(self._sender.queue_circular, True)
-            self.assertEqual(self._sender.queue_blocking, False)
-
-            ok = sender.emit('foo1', {'bar': 'baz1'})
-            self.assertTrue(ok)
-            ok = sender.emit('foo2', {'bar': 'baz2'})
-            self.assertTrue(ok)
-            ok = sender.emit('foo3', {'bar': 'baz3'})
-            self.assertTrue(ok)
-            ok = sender.emit('foo4', {'bar': 'baz4'})
-            self.assertTrue(ok)
-            ok = sender.emit('foo5', {'bar': 'baz5'})
-            self.assertTrue(ok)
-
-        data = self.get_data()
-        eq = self.assertEqual
-        # with the logging interface, we can't be sure to have filled up the queue, so we can
-        # test only for a cautelative condition here
-        self.assertTrue(len(data) >= self.Q_SIZE)
-        eq(3, len(data[0]))
-        self.assertTrue(data[0][1])
-        self.assertTrue(isinstance(data[0][1], int))
-
-        eq(3, len(data[2]))
-        self.assertTrue(data[2][1])
-        self.assertTrue(isinstance(data[2][1], int))
-
-
-class TestSenderWithTimeoutMaxSizeNonCircular(unittest.TestCase):
-    Q_SIZE = 3
-
-    def setUp(self):
-        super(TestSenderWithTimeoutMaxSizeNonCircular, self).setUp()
+        super(TestSenderWithTimeoutAndOverflow, self).setUp()
         self._server = mockserver.MockRecvServer('localhost')
         self._sender = fluent.asyncsender.FluentSender(tag='test',
                                                        port=self._server.port,
@@ -300,34 +247,30 @@ class TestSenderWithTimeoutMaxSizeNonCircular(unittest.TestCase):
     def test_simple(self):
         with self._sender as sender:
             self.assertEqual(self._sender.queue_maxsize, self.Q_SIZE)
-            self.assertEqual(self._sender.queue_blocking, True)
-            self.assertEqual(self._sender.queue_circular, False)
 
-            ok = sender.emit('foo1', {'bar': 'baz1'})
+            ok = sender.emit('foo1', {'bar': 'baz1'}, None)
             self.assertTrue(ok)
-            ok = sender.emit('foo2', {'bar': 'baz2'})
+            ok = sender.emit('foo2', {'bar': 'baz2'}, None)
             self.assertTrue(ok)
-            ok = sender.emit('foo3', {'bar': 'baz3'})
+            ok = sender.emit('foo3', {'bar': 'baz3'}, None)
             self.assertTrue(ok)
-            ok = sender.emit('foo4', {'bar': 'baz4'})
+            ok = sender.emit('foo4', {'bar': 'baz4'}, None)
             self.assertTrue(ok)
-            ok = sender.emit('foo5', {'bar': 'baz5'})
+            ok = sender.emit('foo5', {'bar': 'baz5'}, None)
             self.assertTrue(ok)
 
         data = self.get_data()
         eq = self.assertEqual
-        print(data)
-        eq(5, len(data))
+        # with the logging interface, we can't be sure to have filled up the queue, so we can
+        # test only for a cautelative condition here
+        self.assertTrue(len(data) >= self.Q_SIZE)
         eq(3, len(data[0]))
-        eq('test.foo1', data[0][0])
-        eq({'bar': 'baz1'}, data[0][2])
         self.assertTrue(data[0][1])
         self.assertTrue(isinstance(data[0][1], int))
 
         eq(3, len(data[2]))
-        eq('test.foo3', data[2][0])
-        eq({'bar': 'baz3'}, data[2][2])
-
+        self.assertTrue(data[2][1])
+        self.assertTrue(isinstance(data[2][1], int))
 
 class TestSenderUnlimitedSize(unittest.TestCase):
     Q_SIZE = 3
@@ -352,12 +295,10 @@ class TestSenderUnlimitedSize(unittest.TestCase):
     def test_simple(self):
         with self._sender as sender:
             self.assertEqual(self._sender.queue_maxsize, 0)
-            self.assertEqual(self._sender.queue_blocking, True)
-            self.assertEqual(self._sender.queue_circular, False)
 
             NUM = 1000
             for i in range(1, NUM + 1):
-                ok = sender.emit("foo{}".format(i), {'bar': "baz{}".format(i)})
+                ok = sender.emit("foo{}".format(i), {'bar': "baz{}".format(i)}, None)
                 self.assertTrue(ok)
 
         data = self.get_data()

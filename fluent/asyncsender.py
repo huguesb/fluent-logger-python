@@ -84,7 +84,7 @@ class FluentSender(sender.FluentSender):
                         self._queue.get(block=False)
                     except Empty:
                         break
-            self._queue.put(_TOMBSTONE)
+            self._queue.put((_TOMBSTONE, None))
             self._send_thread.join()
 
     @property

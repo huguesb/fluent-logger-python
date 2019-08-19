@@ -164,7 +164,7 @@ class FluentSender(object):
             self._close()
 
             # Update pending records
-	    if not self.pendings:
+            if not self.pendings:
                 self.pendings = bytes_
                 self.pending_records = [record]
             else:
@@ -176,10 +176,6 @@ class FluentSender(object):
                 self._call_buffer_overflow_handler(self.pendings, records=self.pending_records)
                 self.pendings = None
                 self.pending_records = None
-            else:
-                self.pendings = bytes_
-                if not self.pending_records:
-                    self.pending_records = [record]
 
 
             return False

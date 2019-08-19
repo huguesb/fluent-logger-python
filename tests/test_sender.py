@@ -63,7 +63,7 @@ class TestSender(unittest.TestCase):
 
     def test_simple(self):
         sender = self._sender
-        sender.emit('foo', {'bar': 'baz'})
+        sender.emit('foo', {'bar': 'baz'}, None)
         sender._close()
         data = self.get_data()
         eq = self.assertEqual
@@ -76,7 +76,7 @@ class TestSender(unittest.TestCase):
 
     def test_decorator_simple(self):
         with self._sender as sender:
-            sender.emit('foo', {'bar': 'baz'})
+            sender.emit('foo', {'bar': 'baz'}, None)
         data = self.get_data()
         eq = self.assertEqual
         eq(1, len(data))
@@ -89,7 +89,7 @@ class TestSender(unittest.TestCase):
     def test_nanosecond(self):
         sender = self._sender
         sender.nanosecond_precision = True
-        sender.emit('foo', {'bar': 'baz'})
+        sender.emit('foo', {'bar': 'baz'}, None)
         sender._close()
         data = self.get_data()
         eq = self.assertEqual
@@ -104,7 +104,7 @@ class TestSender(unittest.TestCase):
         time = 1490061367.8616468906402588
         sender = self._sender
         sender.nanosecond_precision = True
-        sender.emit_with_time('foo', time, {'bar': 'baz'})
+        sender.emit_with_time('foo', time, {'bar': 'baz'}, None)
         sender._close()
         data = self.get_data()
         eq = self.assertEqual
@@ -118,7 +118,7 @@ class TestSender(unittest.TestCase):
 
     def test_no_last_error_on_successful_emit(self):
         sender = self._sender
-        sender.emit('foo', {'bar': 'baz'})
+        sender.emit('foo', {'bar': 'baz'}, None)
         sender._close()
 
         self.assertEqual(sender.last_error, None)
@@ -140,7 +140,7 @@ class TestSender(unittest.TestCase):
 
     def test_emit_error(self):
         with self._sender as sender:
-            sender.emit("blah", {"a": object()})
+            sender.emit("blah", {"a": object()}, None)
 
         data = self._server.get_received()
         self.assertEqual(len(data), 1)
@@ -148,9 +148,9 @@ class TestSender(unittest.TestCase):
 
     def test_emit_after_close(self):
         with self._sender as sender:
-            self.assertTrue(sender.emit("blah", {"a": "123"}))
+            self.assertTrue(sender.emit("blah", {"a": "123"}, None))
             sender.close()
-            self.assertFalse(sender.emit("blah", {"a": "456"}))
+            self.assertFalse(sender.emit("blah", {"a": "456"}, None))
 
         data = self._server.get_received()
         self.assertEqual(len(data), 1)
@@ -159,25 +159,25 @@ class TestSender(unittest.TestCase):
     def test_verbose(self):
         with self._sender as sender:
             sender.verbose = True
-            sender.emit('foo', {'bar': 'baz'})
+            sender.emit('foo', {'bar': 'baz'}, None)
             # No assertions here, just making sure there are no exceptions
 
     def test_failure_to_connect(self):
         self._server.close()
 
         with self._sender as sender:
-            sender._send_internal(b"123")
+            sender._send_internal(b"123", None)
             self.assertEqual(sender.pendings, b"123")
             self.assertIsNone(sender.socket)
 
-            sender._send_internal(b"456")
+            sender._send_internal(b"456", None)
             self.assertEqual(sender.pendings, b"123456")
             self.assertIsNone(sender.socket)
 
             sender.pendings = None
             overflows = []
 
-            def boh(buf):
+            def boh(buf, records=None):
                 overflows.append(buf)
 
             def boh_with_error(buf):
@@ -185,24 +185,24 @@ class TestSender(unittest.TestCase):
 
             sender.buffer_overflow_handler = boh
 
-            sender._send_internal(b"0" * sender.bufmax)
+            sender._send_internal(b"0" * sender.bufmax, None)
             self.assertFalse(overflows)  # No overflow
 
-            sender._send_internal(b"1")
+            sender._send_internal(b"1", None)
             self.assertTrue(overflows)
             self.assertEqual(overflows.pop(0), b"0" * sender.bufmax + b"1")
 
             sender.buffer_overflow_handler = None
-            sender._send_internal(b"0" * sender.bufmax)
-            sender._send_internal(b"1")
+            sender._send_internal(b"0" * sender.bufmax, None)
+            sender._send_internal(b"1", None)
             self.assertIsNone(sender.pendings)
 
             sender.buffer_overflow_handler = boh_with_error
-            sender._send_internal(b"0" * sender.bufmax)
-            sender._send_internal(b"1")
+            sender._send_internal(b"0" * sender.bufmax, None)
+            sender._send_internal(b"1", None)
             self.assertIsNone(sender.pendings)
 
-            sender._send_internal(b"1")
+            sender._send_internal(b"1", None)
             self.assertFalse(overflows)  # No overflow
             self.assertEqual(sender.pendings, b"1")
             self.assertIsNone(sender.socket)
@@ -213,7 +213,7 @@ class TestSender(unittest.TestCase):
 
     def test_broken_conn(self):
         with self._sender as sender:
-            sender._send_internal(b"123")
+            sender._send_internal(b"123", None)
             self.assertIsNone(sender.pendings, b"123")
             self.assertTrue(sender.socket)
 
@@ -271,22 +271,22 @@ class TestSender(unittest.TestCase):
             try:
                 self._sender.socket = sock
                 sender.last_error = None
-                self.assertTrue(sender._send_internal(b"456"))
+                self.assertTrue(sender._send_internal(b"456", None))
                 self.assertFalse(sender.last_error)
 
                 self._sender.socket = sock
                 sender.last_error = None
-                self.assertFalse(sender._send_internal(b"456"))
+                self.assertFalse(sender._send_internal(b"456", None))
                 self.assertEqual(sender.last_error.errno, errno.EPIPE)
 
                 self._sender.socket = sock
                 sender.last_error = None
-                self.assertFalse(sender._send_internal(b"456"))
+                self.assertFalse(sender._send_internal(b"456", None))
                 self.assertEqual(sender.last_error.errno, errno.EPIPE)
 
                 self._sender.socket = sock
                 sender.last_error = None
-                self.assertFalse(sender._send_internal(b"456"))
+                self.assertFalse(sender._send_internal(b"456", None))
                 self.assertEqual(sender.last_error.errno, errno.EACCES)
             finally:
                 self._sender.socket = old_sock
@@ -301,7 +301,7 @@ class TestSender(unittest.TestCase):
             self._sender = fluent.sender.FluentSender(tag='test',
                                                       host=server_file)
             with self._sender as sender:
-                self.assertTrue(sender.emit('foo', {'bar': 'baz'}))
+                self.assertTrue(sender.emit('foo', {'bar': 'baz'}, None))
 
             data = self._server.get_received()
             self.assertEqual(len(data), 1)

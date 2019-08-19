@@ -280,10 +280,8 @@ class TestHandlerWithCircularQueue(unittest.TestCase):
 
     def test_simple(self):
         handler = self.get_handler_class()('app.follow', port=self._port,
-                                           queue_maxsize=self.Q_SIZE,
-                                           queue_circular=True)
+                                           queue_maxsize=self.Q_SIZE)
         with handler:
-            self.assertEqual(handler.sender.queue_circular, True)
             self.assertEqual(handler.sender.queue_maxsize, self.Q_SIZE)
 
             logging.basicConfig(level=logging.INFO)
