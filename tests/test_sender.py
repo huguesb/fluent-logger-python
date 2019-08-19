@@ -180,7 +180,7 @@ class TestSender(unittest.TestCase):
             def boh(buf, records=None):
                 overflows.append(buf)
 
-            def boh_with_error(buf):
+            def boh_with_error(buf, records=None):
                 raise RuntimeError
 
             sender.buffer_overflow_handler = boh

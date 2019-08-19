@@ -245,18 +245,23 @@ class TestSenderWithTimeoutAndOverflow(unittest.TestCase):
         return self._server.get_received()
 
     def test_simple(self):
+        overflows = []
+        def overflow_handler(buf, records=None):
+            overflows.append((buf, records))
+
+        self._sender.buffer_overflow_handler = overflow_handler
         with self._sender as sender:
             self.assertEqual(self._sender.queue_maxsize, self.Q_SIZE)
 
-            ok = sender.emit('foo1', {'bar': 'baz1'}, None)
+            ok = sender.emit('foo1', {'bar': 'baz1'}, 1)
             self.assertTrue(ok)
-            ok = sender.emit('foo2', {'bar': 'baz2'}, None)
+            ok = sender.emit('foo2', {'bar': 'baz2'}, 2)
             self.assertTrue(ok)
-            ok = sender.emit('foo3', {'bar': 'baz3'}, None)
+            ok = sender.emit('foo3', {'bar': 'baz3'}, 3)
             self.assertTrue(ok)
-            ok = sender.emit('foo4', {'bar': 'baz4'}, None)
+            ok = sender.emit('foo4', {'bar': 'baz4'}, 4)
             self.assertTrue(ok)
-            ok = sender.emit('foo5', {'bar': 'baz5'}, None)
+            ok = sender.emit('foo5', {'bar': 'baz5'}, 5)
             self.assertTrue(ok)
 
         data = self.get_data()
@@ -271,6 +276,12 @@ class TestSenderWithTimeoutAndOverflow(unittest.TestCase):
         eq(3, len(data[2]))
         self.assertTrue(data[2][1])
         self.assertTrue(isinstance(data[2][1], int))
+
+        self.assertEqual(2, len(overflows))
+        for overflow in overflows:
+            self.assertEqual(1, len(overflow[1]))
+        self.assertEqual(4, overflows[0][1][0])
+        self.assertEqual(5, overflows[1][1][0])
 
 class TestSenderUnlimitedSize(unittest.TestCase):
     Q_SIZE = 3

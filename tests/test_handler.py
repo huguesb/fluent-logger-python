@@ -3,6 +3,7 @@
 import logging
 import sys
 import unittest
+import json
 
 import fluent.handler
 from tests import mockserver
@@ -45,6 +46,32 @@ class TestHandler(unittest.TestCase):
         eq('userB', data[0][2]['to'])
         self.assertTrue(data[0][1])
         self.assertTrue(isinstance(data[0][1], int))
+
+    def test_record_passed_to_fallback(self):
+        overflows = []
+        def overflow_handler(buf, records=None):
+            overflows.append((buf, records))
+
+        # so that it overflows right away.
+        handler = fluent.handler.FluentHandler('app.follow', port=54321, buffer_overflow_handler=overflow_handler, bufmax=0)
+
+        with handler:
+            logging.basicConfig(level=logging.INFO)
+            log = logging.getLogger('fluent.test')
+            handler.setFormatter(fluent.handler.FluentRecordFormatter())
+            log.addHandler(handler)
+
+            log_data = {
+                'from': 'userA',
+                'to': 'userB'
+            }
+            log.info(log_data)
+
+            log.removeHandler(handler)
+            self.assertEqual(1, len(overflows))
+            records = overflows[0][1]
+            self.assertEqual(1, len(records))
+            self.assertEqual(log_data, json.loads(records[0].message.replace("'", '"')))
 
     def test_custom_fmt(self):
         handler = fluent.handler.FluentHandler('app.follow', port=self._port)
