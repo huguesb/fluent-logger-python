@@ -69,24 +69,22 @@ class FluentSender(sender.FluentSender):
 
         self._queues = {}
         self._send_thread = None
-        self._pid = -1
         self._init_send_thread()
 
     def _init_send_thread(self):
-        if not self._send_thread or self._pid != os.getpid():
+        if not self._send_thread or os.getpid() not in self._queues:
             # no-op getter to create queue if it does not exist
             self._queue
-            self._pid = os.getpid()
             self._send_thread = threading.Thread(target=self._send_loop,
-                                                 name="AsyncFluentSender %d %d" % (self._pid, id(self)))
+                                                 name="AsyncFluentSender %d %d" % (os.getpid(), id(self)))
             self._send_thread.daemon = True
             self._send_thread.start()
 
     @property
     def _queue(self):
-        if self._pid not in self._queues:
-            self._queues[self._pid] = Queue(maxsize=self._queue_maxsize)
-        return self._queues[self._pid]
+        if os.getpid() not in self._queues:
+            self._queues[os.getpid()] = Queue(maxsize=self._queue_maxsize)
+        return self._queues[os.getpid()]
 
     def close(self, flush=True):
         with self.lock:
