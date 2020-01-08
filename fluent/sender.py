@@ -3,6 +3,7 @@
 from __future__ import print_function
 
 import errno
+import os
 import socket
 import struct
 import threading
@@ -76,9 +77,15 @@ class FluentSender(object):
         # corresponding original records pending send. Usefull for reconstructing records in fallback python logging handlers
         # in cases where writes to fluentd fails and the raw fluentd bytes are less useful than a LogRecord.
         self.pending_records = None
-        self.lock = threading.Lock()
+        self._locks = {}
         self._closed = False
         self._last_error_threadlocal = threading.local()
+
+    @property
+    def lock(self):
+        if os.getpid() not in self._locks:
+            self._locks[os.getpid()] = threading.Lock()
+        return self._locks[os.getpid()]
 
     def emit(self, label, data, record):
         if self.nanosecond_precision:

@@ -2,6 +2,7 @@
 
 from __future__ import print_function
 
+import os
 import threading
 
 try:
@@ -64,14 +65,28 @@ class FluentSender(sender.FluentSender):
                                            **kwargs)
         self._queue_maxsize = queue_maxsize
 
-        self._thread_guard = threading.Event()  # This ensures visibility across all variables
         self._closed = False
 
-        self._queue = Queue(maxsize=queue_maxsize)
-        self._send_thread = threading.Thread(target=self._send_loop,
-                                             name="AsyncFluentSender %d" % id(self))
-        self._send_thread.daemon = True
-        self._send_thread.start()
+        self._queues = {}
+        self._send_thread = None
+        self._pid = -1
+        self._init_send_thread()
+
+    def _init_send_thread(self):
+        if not self._send_thread or self._pid != os.getpid():
+            # no-op getter to create queue if it does not exist
+            self._queue
+            self._pid = os.getpid()
+            self._send_thread = threading.Thread(target=self._send_loop,
+                                                 name="AsyncFluentSender %d %d" % (self._pid, id(self)))
+            self._send_thread.daemon = True
+            self._send_thread.start()
+
+    @property
+    def _queue(self):
+        if self._pid not in self._queues:
+            self._queues[self._pid] = Queue(maxsize=self._queue_maxsize)
+        return self._queues[self._pid]
 
     def close(self, flush=True):
         with self.lock:
@@ -95,6 +110,8 @@ class FluentSender(sender.FluentSender):
         with self.lock:
             if self._closed:
                 return False
+
+            self._init_send_thread()
             if self._queue.full():
                 self._call_buffer_overflow_handler(bytes_, records=[record])
             else:
